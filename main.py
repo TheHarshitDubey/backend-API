@@ -4,6 +4,33 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
+from datetime import datetime
+
+DATABASE_URL = "sqlite:///./scam_shield.db"
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
+
+SessionLocal = sessionmaker(bind=engine)
+
+Base = declarative_base()
+
+class Scan(Base):
+    __tablename__ = "scans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message = Column(String)
+    is_scam = Column(Boolean)
+    confidence = Column(Float)
+    reply = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+Base.metadata.create_all(bind=engine)
+
 
 load_dotenv()
 print("ENV LOADED:", os.getenv("GEMINI_API_KEY"))
@@ -50,6 +77,22 @@ async def chat(request: chatRequest):
 
         parsed_response = json.loads(ai_text)
 
+        db = SessionLocal()
+
+        scan = Scan(
+            message=request.message,
+            is_scam=parsed_response["is_scam"],
+            confidence=parsed_response["confidence"],
+            reply=parsed_response["reply"]
+        )
+
+        db.add(scan)
+        db.commit()
+        print("Saved to database")
+
+        db.close()
+
+
         return parsed_response
 
     except Exception as e:
@@ -57,3 +100,23 @@ async def chat(request: chatRequest):
             "error": "AI processing failed",
             "details": str(e)
         }
+    
+
+@app.get("/history")
+def get_history():
+    db = SessionLocal()
+    scans = db.query(Scan).order_by(Scan.timestamp.desc()).all()
+    db.close()
+
+    return [
+        {
+            "id": scan.id,
+            "message": scan.message,
+            "is_scam": scan.is_scam,
+            "confidence": scan.confidence,
+            "reply": scan.reply,
+            "timestamp": scan.timestamp
+        }
+        for scan in scans
+    ]
+
