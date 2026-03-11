@@ -1,2 +1,14 @@
+# Python cache
 __pycache__/
+
+# Database
+*.db
+
+# Environment variables
 .env
+
+# Python compiled files
+*.pyc
+
+# Mac files
+.DS_Store
